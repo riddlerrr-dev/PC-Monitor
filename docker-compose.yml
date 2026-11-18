@@ -1,0 +1,13 @@
+services:
+  pc-monitor:
+    build: .
+    container_name: pc-monitor
+    restart: unless-stopped
+    env_file: .env
+    # Host networking lets the ARP check see the PC on your LAN.
+    # The site is then on http://<docker-machine-ip>:8080 (change PORT in .env).
+    network_mode: host
+    cap_add:
+      - NET_RAW
+    volumes:
+      - ./data:/data

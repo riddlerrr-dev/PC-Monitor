@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a19">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>PC Monitor</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='5' width='26' height='17' rx='3' fill='%232a78d6'/><rect x='12' y='24' width='8' height='3' rx='1' fill='%232a78d6'/></svg>">
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<main id="login-view" class="auth" hidden>
+  <form id="login-form" class="card auth-card">
+    <h1>PC Monitor</h1>
+    <p class="muted" id="login-intro">Sign in to manage the PC.</p>
+    <label>Username <input name="username" autocomplete="username" required></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+    <label id="setup-confirm" hidden>Confirm password <input name="confirm" type="password" autocomplete="new-password"></label>
+    <p class="error" id="login-error" hidden></p>
+    <button class="btn primary" type="submit" id="login-btn">Sign in</button>
+  </form>
+</main>
+
+<!-- ============ APP ============ -->
+<div id="app-view" hidden>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <div class="title">PC Monitor</div>
+        <div class="subtitle" id="pc-name">—</div>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button data-tab="overview" class="active">Overview</button>
+      <button data-tab="schedule">Schedule</button>
+      <button data-tab="settings">Settings</button>
+      <button data-tab="users" data-admin hidden>Users</button>
+    </nav>
+    <div class="who"><span id="who-name"></span> <button class="link" id="logout">Sign out</button></div>
+  </header>
+
+  <!-- ---------- OVERVIEW ---------- -->
+  <section id="tab-overview" class="tab">
+    <div id="problems"></div>
+
+    <div class="grid-2">
+      <div class="card status-card" id="status-card">
+        <div class="status-row">
+          <span class="status-dot" id="status-dot"></span>
+          <div>
+            <div class="status-label" id="status-label">Checking…</div>
+            <div class="muted small" id="status-checked"></div>
+          </div>
+        </div>
+        <div class="status-summary" id="status-summary"></div>
+        <div class="pending" id="pending" hidden></div>
+        <div class="chips" id="status-chips"></div>
+      </div>
+
+      <div class="card controls">
+        <div class="block-row">
+          <button class="btn block-btn" id="block-btn" aria-pressed="false">
+            <span class="block-icon" aria-hidden="true"></span>
+            <span id="block-btn-label">Block PC</span>
+          </button>
+          <div class="block-opts" id="block-opts">
+            <label class="small muted" for="block-until">Block until</label>
+            <select id="block-until">
+              <option value="">Until I unblock it</option>
+              <option value="1h">1 hour</option>
+              <option value="morning">Tomorrow 07:00</option>
+              <option value="custom">Pick a time…</option>
+            </select>
+            <input type="datetime-local" id="block-custom" hidden>
+          </div>
+        </div>
+        <p class="small muted" id="block-desc">Blocked means it gets shut down whenever it's switched on, whatever the schedule says.</p>
+
+        <hr>
+        <div class="ctrl-head">
+          <h3>Extra time</h3>
+          <button class="link" id="ext-cancel" hidden>Cancel extra time</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn" data-ext="15">+15 min</button>
+          <button class="btn" data-ext="30">+30 min</button>
+          <button class="btn" data-ext="60">+1 hour</button>
+          <input type="datetime-local" id="ext-until" aria-label="Allow until">
+          <button class="btn" id="ext-until-btn">Allow until</button>
+        </div>
+        <p class="small muted" id="ext-desc"></p>
+
+        <hr>
+        <div class="btn-row">
+          <button class="btn danger" id="shutdown-btn">Shut down now</button>
+          <button class="btn" id="message-btn">Send a message</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <div class="chart-head">
+        <div>
+          <h2>Power history</h2>
+          <p class="small muted">When the PC was on, with events marked. Hover or tap for details.</p>
+        </div>
+        <div class="seg" id="range">
+          <button data-range="24h" class="active">24h</button>
+          <button data-range="7d">7 days</button>
+          <button data-range="30d">30 days</button>
+          <button data-range="90d">90 days</button>
+        </div>
+      </div>
+      <div class="filters" id="filters"></div>
+      <div class="chart-wrap">
+        <canvas id="timeline" aria-label="Power history chart" role="img"></canvas>
+        <div class="tooltip" id="tip" hidden></div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="card" id="daily-card" hidden>
+      <h2>Hours on per day</h2>
+      <div class="chart-wrap short"><canvas id="daily" aria-label="Hours on per day" role="img"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h2>Event log</h2>
+      <div class="table-wrap">
+        <table class="events">
+          <thead><tr><th>When</th><th>Event</th><th>Details</th><th>By</th></tr></thead>
+          <tbody id="event-rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- SCHEDULE ---------- -->
+  <section id="tab-schedule" class="tab" hidden>
+    <form id="schedule-form">
+      <div class="card">
+        <h2>Daily allowed hours</h2>
+        <p class="small muted">Outside these hours the PC is shut down whenever it's switched on. If the end time is earlier than the start (e.g. 16:00 to 00:30) the window runs past midnight.</p>
+        <div class="days" id="days"></div>
+        <div class="btn-row">
+          <button type="button" class="link" id="copy-weekdays">Copy Monday to Tue–Thu</button>
+        </div>
+      </div>
+
+      <div class="card holiday" id="holiday-card">
+        <div class="ctrl-head">
+          <h2>Holiday mode</h2>
+          <label class="switch"><input type="checkbox" id="hol-enabled"><span></span> <b id="hol-state">Off</b></label>
+        </div>
+        <p class="small muted">While it's on, these hours replace every day's schedule. Set an end date and it switches itself off afterwards.</p>
+        <div id="hol-row"></div>
+        <label class="inline">Last day of holiday <input type="date" id="hol-until"> <span class="small muted">(leave blank to keep it on)</span></label>
+      </div>
+
+      <div class="savebar">
+        <span class="small muted" id="sched-status"></span>
+        <button class="btn primary" type="submit">Save schedule</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ---------- SETTINGS ---------- -->
+  <section id="tab-settings" class="tab" hidden>
+    <form id="settings-form">
+      <div class="card">
+        <h2>Warnings &amp; shutdown</h2>
+        <label>Warning times (minutes before the end of allowed time, comma separated)
+          <input id="warnings" placeholder="15, 5, 1" inputmode="numeric">
+        </label>
+        <p class="small muted">Each warning pops up on the PC and schedules the shutdown on the PC itself, so it still happens even if this server goes offline.</p>
+        <label>Countdown when switched on outside allowed hours (seconds)
+          <input id="grace" type="number" min="0" max="900">
+        </label>
+        <p class="small muted">The first time it's switched on outside allowed hours it gets this countdown. If it's still on after that, or comes back on, it's shut down straight away.</p>
+        <label class="switch"><input type="checkbox" id="enforce"><span></span> Enforcement on <span class="small muted">(turn off to only monitor)</span></label>
+      </div>
+
+      <div class="card">
+        <h2>Phone notifications</h2>
+        <p class="small muted">Uses <a href="https://ntfy.sh" target="_blank" rel="noopener">ntfy</a>. Install the ntfy app, subscribe to a topic with a long random name, and paste the topic URL below. Everyone who subscribes to that topic gets the alerts.</p>
+        <label>ntfy topic URL <input id="ntfy-url" placeholder="https://ntfy.sh/pcmonitor-7f3k9q2x…"></label>
+        <label>Access token <span class="small muted">(optional, for a private ntfy server)</span> <input id="ntfy-token" type="password" autocomplete="off"></label>
+        <fieldset>
+          <legend>Notify me when…</legend>
+          <div class="checks" id="notify-events"></div>
+        </fieldset>
+        <div class="btn-row"><button type="button" class="btn" id="test-notify">Send test notification</button></div>
+      </div>
+
+      <div class="savebar">
+        <span class="small muted" id="settings-status"></span>
+        <button class="btn primary" type="submit">Save settings</button>
+      </div>
+    </form>
+
+    <div class="card">
+      <h2>Connection</h2>
+      <dl class="kv" id="conn"></dl>
+      <p class="small muted">These come from the server's <code>.env</code> file.</p>
+    </div>
+
+    <form class="card" id="pw-form">
+      <h2>Change your password</h2>
+      <label>Current password <input type="password" name="current" autocomplete="current-password" required></label>
+      <label>New password <input type="password" name="new" minlength="8" autocomplete="new-password" required></label>
+      <div class="btn-row"><button class="btn" type="submit">Change password</button> <span class="small muted" id="pw-status"></span></div>
+    </form>
+  </section>
+
+  <!-- ---------- USERS ---------- -->
+  <section id="tab-users" class="tab" hidden>
+    <div class="card">
+      <h2>People who can sign in</h2>
+      <div class="table-wrap"><table class="events"><thead><tr><th>Username</th><th>Role</th><th></th></tr></thead><tbody id="user-rows"></tbody></table></div>
+    </div>
+    <form class="card" id="user-form">
+      <h2>Add someone</h2>
+      <label>Username <input name="username" required pattern="[A-Za-z0-9_.\-]+" minlength="2" maxlength="32"></label>
+      <label>Password <input name="password" type="password" minlength="8" required autocomplete="new-password"></label>
+      <label class="switch"><input type="checkbox" name="is_admin"><span></span> Admin <span class="small muted">(can add and remove people)</span></label>
+      <div class="btn-row"><button class="btn primary" type="submit">Add</button> <span class="small muted" id="user-status"></span></div>
+    </form>
+  </section>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="/static/vendor/chartjs-plugin-annotation.min.js"></script>
+<script src="/static/tz.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
