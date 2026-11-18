@@ -2,6 +2,31 @@
 
 A small self-hosted website that watches a Windows PC, keeps a history of when it was on, and shuts it down outside the allowed hours.
 
+## Why I built this
+
+I wanted a reliable way to manage a Windows PC's permitted usage hours remotely, without manually checking whether it was running or repeatedly intervening to shut it down.
+
+What started as a scheduling requirement grew into a self-hosted monitoring and automation application with configurable rules, remote actions, notifications and an audit history.
+
+I used Claude to help turn my requirements into a working application, testing the results and refining the behaviour through multiple iterations.
+
+## Screenshots
+
+The overview: current status, quick controls, and a power-history graph with events marked on it.
+
+![Overview page with status, controls and power-history graph](docs/dashboard.png)
+
+Per-day allowed hours, with a holiday mode that overrides them.
+
+![Schedule page with per-day hours and holiday mode](docs/schedule.png)
+
+<img src="docs/mobile.png" alt="Overview page on a phone in dark mode" width="300">
+
+These were taken in demo mode with made-up history (see [Preview with fake data](#files-and-data)).
+
+## Features
+
+
 - **Per-day allowed hours.** Each day can have a time window (it can run past midnight), be allowed all day, or not be allowed at all.
 - **Holiday mode.** One set of hours replaces every day until an end date you choose, then switches itself off.
 - **Block button.** While blocked, the PC is shut down whenever it's switched on. A block can last until you lift it, for an hour, until 07:00 tomorrow, or until a time you pick.
@@ -13,11 +38,19 @@ A small self-hosted website that watches a Windows PC, keeps a history of when i
 - **Separate logins** for each person, with admins who can add and remove people.
 - **Phone alerts** through [ntfy](https://ntfy.sh), which has free iOS and Android apps.
 
+## How I used AI
+
+I used Claude extensively throughout development to generate and refine the application's Python backend, web interface and automation logic.
+
+My contribution was defining the requirements, specifying the intended behaviour, testing the application, identifying issues and directing improvements through iterative prompts.
+
+AI made it possible for me to create a much more complete application than I could have built independently at the time. The project also reinforced the importance of validating AI-generated code, particularly when it controls real devices and performs automated actions.
+
 ---
 
 ## 1. Prepare the Windows PC
 
-The PC needs the **OpenSSH Server** running. It already is if your Apple Shortcut works.
+The PC needs Windows' built-in **OpenSSH Server** installed and running (Settings → System → Optional features → OpenSSH Server).
 
 **a) Fixed IP.** In your router, add a DHCP reservation so the PC always gets the same IP address.
 
@@ -125,17 +158,17 @@ The server checks the PC every 30 seconds (`POLL_SECONDS`).
 | PC restarted while the server was offline | Spotted from Windows' boot time when the server reconnects. The old timer record is dropped and warnings are scheduled again |
 | Enforcement paused while a shutdown is scheduled | The scheduled shutdown is cancelled. If SSH is down at that moment, the site warns you and keeps trying until it works. A manual **Shut down now** isn't cancelled |
 
-**If he cancels a shutdown on the PC** (`shutdown /a`): Windows can't be asked whether a shutdown is scheduled without cancelling it, so the site can't see the cancel. Instead, it waits a short safety window and then shuts down again if the PC is still on. That's 45 seconds after the cut-off, or about 2½ minutes after a block or out-of-hours countdown. A manual **Shut down now** isn't replaced by automatic enforcement while it's counting down.
+**If someone cancels a shutdown on the PC** (`shutdown /a`): Windows can't be asked whether a shutdown is scheduled without cancelling it, so the site can't see the cancel. Instead, it waits a short safety window and then shuts down again if the PC is still on. That's 45 seconds after the cut-off, or about 2½ minutes after a block or out-of-hours countdown. A manual **Shut down now** isn't replaced by automatic enforcement while it's counting down.
 
 Scheduled shutdowns and warnings already sent are saved in the database, so restarting the container doesn't lose track of them. All times on the site are shown in the server's `TZ`, whatever time zone your phone is set to.
 
 Warnings use `shutdown /s /t <seconds> /c "<message>"`, which shows a Windows notification on both Home and Pro. **Send a message** uses `msg *`, which only exists on Pro and Education editions.
 
-## Limits: he's an admin on that PC
+## Limits: if the PC's user is an administrator
 
-With an administrator account he can stop the SSH service, block it in the firewall, delete the key, or change the PC's IP. Most of this gets **detected**: the ARP check still sees the PC on the network, so you get the tamper alert. He can still **get round** it, though. Changing the PC's IP or MAC address, or using a different network, would make it look "off".
+With an administrator account, the person using the PC can stop the SSH service, block it in the firewall, delete the key, or change the PC's IP. Most of this gets **detected**: the ARP check still sees the PC on the network, so you get the tamper alert. They can still **get round** it, though. Changing the PC's IP or MAC address, or using a different network, would make it look "off".
 
-The real fix is to make his everyday Windows account a **standard user**. Keep a separate admin account (the one SSH logs in to) that he doesn't have the password for. He can then no longer change SSH, the firewall or the key.
+The real fix is to make their everyday Windows account a **standard user**. Keep a separate admin account (the one SSH logs in to) that they don't have the password for. They can then no longer change SSH, the firewall or the key.
 
 Sleep and hibernate show as "off" on the graph, because a sleeping PC doesn't answer.
 
