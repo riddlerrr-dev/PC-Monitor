@@ -46,9 +46,9 @@ def test_none_and_all_day():
 
 def test_holiday_overrides_and_expires():
     s = settings(holiday={"enabled": True, "mode": "window", "start": "09:00", "end": "23:00", "until": "2026-11-03"})
-    assert policy.evaluate(at(None, 11, 2, 22), s, TZ)["allowed"]       # holiday hours
-    assert policy.evaluate(at(None, 11, 3, 10), s, TZ)["allowed"]       # last holiday day
-    assert not policy.evaluate(at(None, 11, 4, 10), s, TZ)["allowed"]   # back to normal Wed
+    assert policy.evaluate(at(None, 11, 2, 22), s, TZ)["allowed"]  # holiday hours
+    assert policy.evaluate(at(None, 11, 3, 10), s, TZ)["allowed"]  # last holiday day
+    assert not policy.evaluate(at(None, 11, 4, 10), s, TZ)["allowed"]  # back to normal Wed
 
 
 def test_block_beats_everything():

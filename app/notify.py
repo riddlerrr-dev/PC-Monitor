@@ -1,6 +1,11 @@
 """Phone notifications via ntfy (https://ntfy.sh, free iOS/Android app)."""
+
+from __future__ import annotations
+
 import logging
 import urllib.request
+from collections.abc import Callable
+from typing import Any
 
 log = logging.getLogger("pcmonitor.notify")
 
@@ -11,7 +16,11 @@ PRIORITY = {
 }
 
 
-def send(settings: dict, event_type: str, title: str, message: str, force: bool = False) -> tuple[bool, str]:
+# (settings, event_type, title, message) -> (sent, detail); tests pass a fake
+Notifier = Callable[[dict[str, Any], str, str, str], tuple[bool, str]]
+
+
+def send(settings: dict[str, Any], event_type: str, title: str, message: str, force: bool = False) -> tuple[bool, str]:
     n = settings.get("notify") or {}
     url = (n.get("ntfy_url") or "").strip()
     if not url:
@@ -29,6 +38,6 @@ def send(settings: dict, event_type: str, title: str, message: str, force: bool 
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             return True, f"HTTP {r.status}"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 - report any failure to the UI
         log.warning("ntfy failed: %s", e)
         return False, str(e)
