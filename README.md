@@ -1,5 +1,7 @@
 # PC Monitor
 
+[![CI](https://github.com/riddlerrr-dev/PC-Monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/riddlerrr-dev/PC-Monitor/actions/workflows/ci.yml)
+
 A small self-hosted website that watches a Windows PC, keeps a history of when it was on, and shuts it down outside the allowed hours.
 
 ## Why I built this
