@@ -1,68 +1,107 @@
-"""Runtime configuration, read from environment variables (see .env.example)."""
+"""Runtime configuration, read from environment variables (see .env.example).
+
+Nothing happens at import time: `Config.from_env()` builds an immutable config object, which the
+app factory passes to the parts that need it. Tests build their own with `Config(...)`.
+"""
+
+from __future__ import annotations
+
+import contextlib
 import os
 import secrets
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 
-def _env(name: str, default: str = "") -> str:
-    return os.environ.get(name, default).strip()
+def _truthy(value: str) -> bool:
+    return value.strip().lower() in ("1", "true", "yes", "on")
 
 
-def _bool(name: str, default: bool) -> bool:
-    v = _env(name, "true" if default else "false").lower()
-    return v in ("1", "true", "yes", "on")
+@dataclass(frozen=True)
+class Config:
+    data_dir: Path = Path("/data")
+    tz_name: str = "Europe/London"
+
+    # The PC being monitored
+    pc_name: str = "Gaming PC"
+    pc_host: str = ""
+    pc_ssh_port: int = 22
+    pc_ssh_user: str = ""
+    pc_ssh_password: str = ""  # optional; key auth preferred
+    ssh_key_path: str = ""  # default: <data_dir>/ssh/id_ed25519
+
+    # Monitoring
+    poll_seconds: int = 30
+    check_arp: bool = True  # needs network_mode: host + NET_RAW
+    arp_interface: str = ""  # e.g. eth0; blank = auto
+    ssh_fails_before_alert: int = 4
+    auth_check_seconds: int = 300  # how often to test a real SSH login
+    # Off (recommended): only talk to the PC if its host key is already in data/known_hosts.
+    # On: accept whatever key answers the first time and save it (trust on first use).
+    ssh_trust_first_use: bool = False
+    dry_run: bool = False  # log commands instead of running them over SSH
+
+    # Web
+    cookie_secure: bool = False  # set true if served over HTTPS
+    admin_username: str = "admin"
+    admin_password: str = ""
+    secret_key: str = field(default="", repr=False)
+
+    @property
+    def tz(self) -> ZoneInfo:
+        return ZoneInfo(self.tz_name)
+
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / "pcmonitor.db"
+
+    @property
+    def known_hosts_path(self) -> Path:
+        return self.data_dir / "known_hosts"
+
+    @property
+    def key_path(self) -> str:
+        return self.ssh_key_path or str(self.data_dir / "ssh" / "id_ed25519")
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] = os.environ) -> Config:
+        def get(name: str, default: str = "") -> str:
+            return env.get(name, default).strip()
+
+        data_dir = Path(get("DATA_DIR", "/data"))
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return cls(
+            data_dir=data_dir,
+            tz_name=get("TZ", "Europe/London"),
+            pc_name=get("PC_NAME", "Gaming PC"),
+            pc_host=get("PC_HOST"),
+            pc_ssh_port=int(get("PC_SSH_PORT", "22")),
+            pc_ssh_user=get("PC_SSH_USER"),
+            pc_ssh_password=get("PC_SSH_PASSWORD"),
+            ssh_key_path=get("SSH_KEY_PATH"),
+            poll_seconds=max(10, int(get("POLL_SECONDS", "30"))),
+            check_arp=_truthy(get("CHECK_ARP", "true")),
+            arp_interface=get("ARP_INTERFACE"),
+            ssh_fails_before_alert=int(get("SSH_FAILS_BEFORE_ALERT", "4")),
+            auth_check_seconds=max(60, int(get("AUTH_CHECK_SECONDS", "300"))),
+            ssh_trust_first_use=_truthy(get("SSH_TRUST_FIRST_USE", "false")),
+            dry_run=_truthy(get("DRY_RUN", "false")),
+            cookie_secure=_truthy(get("COOKIE_SECURE", "false")),
+            admin_username=get("ADMIN_USERNAME", "admin"),
+            admin_password=get("ADMIN_PASSWORD"),
+            secret_key=get("SECRET_KEY") or load_or_create_secret(data_dir),
+        )
 
 
-DATA_DIR = Path(_env("DATA_DIR", "/data"))
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-TZ_NAME = _env("TZ", "Europe/London")
-TZ = ZoneInfo(TZ_NAME)
-
-# The PC being monitored
-PC_NAME = _env("PC_NAME", "Gaming PC")
-PC_HOST = _env("PC_HOST")
-PC_SSH_PORT = int(_env("PC_SSH_PORT", "22"))
-PC_SSH_USER = _env("PC_SSH_USER")
-PC_SSH_PASSWORD = _env("PC_SSH_PASSWORD")  # optional; key auth preferred
-SSH_KEY_PATH = _env("SSH_KEY_PATH", str(DATA_DIR / "ssh" / "id_ed25519"))
-KNOWN_HOSTS_PATH = str(DATA_DIR / "known_hosts")
-
-# Monitoring
-POLL_SECONDS = max(10, int(_env("POLL_SECONDS", "30")))
-CHECK_ARP = _bool("CHECK_ARP", True)          # needs network_mode: host + NET_RAW
-ARP_INTERFACE = _env("ARP_INTERFACE")         # e.g. eth0; blank = auto
-SSH_FAILS_BEFORE_ALERT = int(_env("SSH_FAILS_BEFORE_ALERT", "4"))
-AUTH_CHECK_SECONDS = max(60, int(_env("AUTH_CHECK_SECONDS", "300")))  # how often to test a real SSH login
-# Off (recommended): only talk to the PC if its host key is already in data/known_hosts.
-# On: accept whatever key answers the first time and save it (trust on first use).
-SSH_TRUST_FIRST_USE = _bool("SSH_TRUST_FIRST_USE", False)
-
-# Testing: log commands instead of running them over SSH
-DRY_RUN = _bool("DRY_RUN", False)
-
-# Web
-PORT = int(_env("PORT", "8080"))
-COOKIE_SECURE = _bool("COOKIE_SECURE", False)  # set true if served over HTTPS
-ADMIN_USERNAME = _env("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = _env("ADMIN_PASSWORD")
-
-
-def _secret_key() -> str:
-    env_key = _env("SECRET_KEY")
-    if env_key:
-        return env_key
-    path = DATA_DIR / "secret_key"
+def load_or_create_secret(data_dir: Path) -> str:
+    """Session-signing key, kept in the data folder so logins survive restarts."""
+    path = data_dir / "secret_key"
     if path.exists():
         return path.read_text().strip()
     key = secrets.token_urlsafe(48)
     path.write_text(key)
-    try:
+    with contextlib.suppress(OSError):  # e.g. a Windows filesystem
         path.chmod(0o600)
-    except OSError:
-        pass
     return key
-
-
-SECRET_KEY = _secret_key()

@@ -3,21 +3,26 @@
     DATA_DIR=./demo-data python -m scripts.seed_demo
 Never point this at your real data folder.
 """
+
 import random
 from datetime import datetime, timedelta
 
-from app import config, db
+from app.config import Config
+from app.db import Database
+
+config = Config.from_env()
+db = Database(config.db_path)
 
 random.seed(4)
-now = datetime.now(config.TZ).replace(second=0, microsecond=0)
+now = datetime.now(config.tz).replace(second=0, microsecond=0)
 start = now - timedelta(days=14)
-step = config.POLL_SECONDS
+step = config.poll_seconds
 
 
 def on_periods(day):
     """Made-up evening: on after school, sometimes back on after shutdown."""
     d = day.date()
-    base = datetime.combine(d, datetime.min.time(), tzinfo=config.TZ)
+    base = datetime.combine(d, datetime.min.time(), tzinfo=config.tz)
     weekend = d.weekday() >= 5
     periods = []
     s = base + timedelta(hours=10 if weekend else 16, minutes=random.randint(0, 50))
@@ -36,16 +41,26 @@ while day < now:
         if s > now:
             continue
         e = min(e, now)
-        events.append((s, "power_on" if kind == "normal" else "power_on_outside",
-                       "PC turned on" if kind == "normal" else f"PC turned on outside allowed hours ({s:%H:%M})", None))
+        events.append(
+            (
+                s,
+                "power_on" if kind == "normal" else "power_on_outside",
+                "PC turned on" if kind == "normal" else f"PC turned on outside allowed hours ({s:%H:%M})",
+                None,
+            )
+        )
         if kind == "normal":
             dl = e.replace(second=0)
             for w in (15, 5, 1):
                 t = dl - timedelta(minutes=w)
                 if s < t < now:
-                    events.append((t, "warning", f"{w} minute{'s' if w > 1 else ''} warning sent (shutdown at {dl:%H:%M})", None))
+                    events.append(
+                        (t, "warning", f"{w} minute{'s' if w > 1 else ''} warning sent (shutdown at {dl:%H:%M})", None)
+                    )
         else:
-            events.append((s + timedelta(seconds=30), "shutdown_sent", "Shutdown sent in 60s, outside allowed hours", None))
+            events.append(
+                (s + timedelta(seconds=30), "shutdown_sent", "Shutdown sent in 60s, outside allowed hours", None)
+            )
         if e < now:
             events.append((e, "power_off", "PC turned off", None))
         t = s
@@ -58,8 +73,14 @@ events.append((now - timedelta(days=3, hours=4), "block_on", "Blocked until Thu 
 events.append((now - timedelta(days=2, hours=13), "block_off", "Block ended (time reached)", None))
 events.append((now - timedelta(days=5, hours=2), "extension", "Allowed until 21:30", "dad"))
 events.append((now - timedelta(days=6, hours=6), "schedule_changed", "Daily schedule updated", "alex"))
-events.append((now - timedelta(days=1, hours=1), "ssh_unreachable",
-               "PC is on the network but SSH isn't answering, so it can't be shut down.", None))
+events.append(
+    (
+        now - timedelta(days=1, hours=1),
+        "ssh_unreachable",
+        "PC is on the network but SSH isn't answering, so it can't be shut down.",
+        None,
+    )
+)
 
 # Off samples fill the gaps, except a 5-hour monitor outage 4 days ago
 on_ts = {int(t.timestamp()) // step for t, _, _ in samples}
@@ -71,10 +92,7 @@ while t < now:
     t += timedelta(seconds=step)
 
 samples.sort()
-c = db.conn()
-c.executemany("INSERT INTO samples(ts, online, ssh) VALUES(?,?,?)",
-              [(int(t.timestamp()), int(o), int(s)) for t, o, s in samples])
-c.executemany("INSERT INTO events(ts, type, message, user) VALUES(?,?,?,?)",
-              [(int(t.timestamp()), ty, m, u) for t, ty, m, u in sorted(events)])
-c.commit()
-print(f"seeded {len(samples)} samples and {len(events)} events into {config.DATA_DIR}")
+db.add_samples([(int(t.timestamp()), o, ssh) for t, o, ssh in samples])
+for t, ty, m, u in sorted(events):
+    db.add_event(ty, m, u, ts=int(t.timestamp()))
+print(f"seeded {len(samples)} samples and {len(events)} events into {config.data_dir}")

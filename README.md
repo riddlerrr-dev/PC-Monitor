@@ -174,14 +174,27 @@ Sleep and hibernate show as "off" on the graph, because a sleeping PC doesn't an
 
 ---
 
-## Files and data
+## Project structure
 
 ```
-app/            Python backend (FastAPI) and the web UI in app/static/
-data/           Created on first run: pcmonitor.db (history, settings, accounts), ssh key, secret key
-tests/          Schedule and enforcement tests: uv run pytest (each test gets its own empty database). Date tests: tests/run_tz_tests.sh (needs Node)
-scripts/        seed_demo.py fills a throwaway database with two weeks of made-up history
+app/
+  main.py        Web API (FastAPI): routes, logins, app factory
+  monitor.py     Background loop: checks the PC, sends warnings and shutdowns
+  state.py       The monitor's state as typed objects (enforcement session, connection health)
+  policy.py      Scheduling rules: is the PC allowed on now, and until when (pure functions)
+  pc.py          SSH and network checks for the Windows PC
+  db.py          SQLite storage
+  config.py      Settings read from the environment
+  notify.py      Phone notifications via ntfy
+  static/        Web UI (plain JavaScript, no build step); tz.js holds the date handling
+tests/           Python tests with a fake PC and clock; tz.test.mjs for dates (Node)
+scripts/         seed_demo.py fills a throwaway database with two weeks of made-up history
+data/            Created on first run: pcmonitor.db (history, settings, accounts), SSH key, secret key
 ```
+
+The scheduling rules are pure functions, so they're tested without a database or network. Everything else is
+built in one place, `create_app()`, and passed in: the monitor is given its config, database, PC client and clock.
+That's what lets the tests drive a whole simulated evening with a fake PC and a fake clock.
 
 To back up, copy the `data/` folder.
 
@@ -194,7 +207,7 @@ Linux / macOS:
 ```bash
 DATA_DIR=./demo-data uv run python -m scripts.seed_demo
 DATA_DIR=./demo-data DRY_RUN=true CHECK_ARP=false PC_HOST=127.0.0.1 PC_SSH_USER=x \
-  ADMIN_PASSWORD=demo12345 uv run uvicorn app.main:app --port 8080
+  ADMIN_PASSWORD=demo12345 uv run uvicorn --factory app.main:create_app --port 8080
 ```
 
 Windows (Command Prompt):
@@ -207,7 +220,7 @@ set PC_HOST=127.0.0.1
 set PC_SSH_USER=x
 set ADMIN_PASSWORD=demo12345
 uv run python -m scripts.seed_demo
-uv run uvicorn app.main:app --port 8080
+uv run uvicorn --factory app.main:create_app --port 8080
 ```
 
 Windows (PowerShell):
@@ -216,9 +229,23 @@ Windows (PowerShell):
 $env:DATA_DIR="demo-data"; $env:DRY_RUN="true"; $env:CHECK_ARP="false"
 $env:PC_HOST="127.0.0.1"; $env:PC_SSH_USER="x"; $env:ADMIN_PASSWORD="demo12345"
 uv run python -m scripts.seed_demo
-uv run uvicorn app.main:app --port 8080
+uv run uvicorn --factory app.main:create_app --port 8080
 ```
 
 Then open http://localhost:8080 and sign in as `admin` / `demo12345`. These variables only last for that terminal window. Run the seed step once only, because running it again adds a second copy of the fake history.
 
-Dependencies are managed with [uv](https://docs.astral.sh/uv/): they're listed in `pyproject.toml` and pinned in `uv.lock`. To upgrade them, run `uv lock --upgrade`, then `uv run pytest`, then rebuild the container.
+## Development
+
+Dependencies are managed with [uv](https://docs.astral.sh/uv/): they're listed in `pyproject.toml` and pinned in `uv.lock`.
+
+```bash
+uv sync                      # install everything, including dev tools
+uv run ruff check .          # lint
+uv run ruff format .         # format
+uv run mypy                  # type check (strict)
+uv run pytest                # Python tests
+tests/run_tz_tests.sh        # date tests in five device time zones (needs Node)
+```
+
+GitHub Actions runs all of these on every push and pull request, and also builds the Docker image and checks
+it starts. Dependabot opens a pull request when a dependency or action has an update.
