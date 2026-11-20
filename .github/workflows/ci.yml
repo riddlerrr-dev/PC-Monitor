@@ -50,7 +50,7 @@ jobs:
           node-version: 24
       - name: JavaScript syntax
         run: node --check app/static/app.js && node --check app/static/tz.js
-      - run: tests/run_tz_tests.sh
+      - run: sh tests/run_tz_tests.sh
 
   docker:
     name: Docker image builds
